@@ -5,62 +5,69 @@ import os
 
 app = Flask(__name__)
 
-# Mã Token của bạn đã được cấu hình trực tiếp vào đây
 TOKEN = "447107892283877624:oedSMfxhfckBEqlvlEiGvrIVJbLxWHOppZmApWCoNeyKYKqwuVMHPWpTMiotWUpS"
-API_URL = f"https://bot.zapps.me/api/v1/bot{TOKEN}"
+API_URL = f"https://bot.zapps.me/api/v1/bot{TOKEN}/sendMessage" 
 
-# Dữ liệu hoạt động của nhóm
 danh_sach_thanh_vien = ["Duy", "Thắng", "Nam", "An"]
 thong_ke_tin_nhan = {"Duy": 150, "Thắng": 12, "Nam": 85, "An": 40}
 
 def send_message(chat_id, text):
-    requests.post(f"{API_URL}/sendMessage", json={"chat_id": chat_id, "text": text})
+    payload = {"chat_id": chat_id, "text": text}
+    print(f"[BOT] Đang gửi tin nhắn tới {chat_id}: {text}")
+    try:
+        res = requests.post(API_URL, json=payload)
+        print(f"[ZALO RESPONSE] Mã lỗi API: {res.status_code} - Phản hồi: {res.text}")
+    except Exception as e:
+        print(f"[ERROR] Lỗi kết nối API: {e}")
 
 @app.route('/', methods=['GET', 'POST'])
 def webhook():
-    # Phục vụ lệnh kiểm tra (Health Check) của Render để hệ thống báo trạng thái "Live"
     if request.method == 'GET':
         return "Bot Sky Dodge đang hoạt động bình thường!", 200
 
     data = request.json
+    print("\n=== [LOGS] DỮ LIỆU ZALO BẮN SANG WEBHOOK ===")
+    print(data)
+    print("=============================================\n")
+
     if not data:
         return jsonify({"status": "error"}), 400
 
-    # Nhận dữ liệu dữ kiện từ Zalo gửi sang
     message = data.get("message", {})
-    chat_id = message.get("chat", {}).get("id")
-    text = str(message.get("text", "")).strip()
-    event_type = message.get("event_type", "chat")
+    chat_id = None
+    text = ""
+
+    # Bóc tách linh hoạt để tránh lỗi cấu trúc
+    if isinstance(data, dict):
+        chat_id = data.get("group_id") or data.get("sender", {}).get("id")
+        if isinstance(message, dict):
+            text = str(message.get("text", "")).strip()
+            chat_id = chat_id or message.get("chat_id") or message.get("chat", {}).get("id")
+        else:
+            text = str(data.get("text", "")).strip()
 
     if not chat_id:
-        return jsonify({"status": "ok"}), 200
+        chat_id = "unknown"
 
-    # 1. Xử lý các sự kiện tự động không cần lệnh
+    event_type = data.get("event_type") or (message.get("event_type") if isinstance(message, dict) else "chat")
+    
     if event_type == "member_join":
         send_message(chat_id, "Chào thành viên mới.")
     elif event_type == "member_leave":
         send_message(chat_id, "Tạm biệt khi ai đó rời nhóm.")
-
-    # 2. Xử lý các lệnh từ người dùng
     elif text == "/start":
         send_message(chat_id, "Xin chào, tôi là chat bot của nhóm Sky Dodge, tôi sẽ giải thích một số thông tin hữu ích về nhóm cho bạn.")
-    
     elif text == "/parky":
         send_message(chat_id, "Theo tôi được biết Thắng là 1 con chó súc vật, chỉ biết cong đuôi khi anh em khó khăn, nên hạn chế tiếp xúc với người này.")
-    
     elif text == "/asuna":
         send_message(chat_id, "Gửi bạn hình Asuna ngẫu nhiên: https://example.com/asuna_random.jpg")
-    
     elif text == "/game":
-        send_message(chat_id, "Link các web của Duy:\n- War Between Kings: [Điền link web của bạn vào đây]\n- Angry Fat - Random Map Edition: [Điền link web của bạn vào đây]")
-    
+        send_message(chat_id, "Link các web của Duy:\n- War Between Kings: [link]\n- Angry Fat - Random Map Edition: [link]")
     elif text == "/random":
         nguoi = random.choice(danh_sach_thanh_vien)
         send_message(chat_id, f"Người ngẫu nhiên được chọn là: {nguoi}")
-    
     elif text == "/chain":
         send_message(chat_id, "Thống kê chuỗi nhắn tin của nhóm: Đang duy trì chuỗi 7 ngày liên tiếp.")
-    
     elif text.startswith("/statistical"):
         parts = text.split(" ", 1)
         if len(parts) > 1:
@@ -73,6 +80,5 @@ def webhook():
     return jsonify({"status": "success"}), 200
 
 if __name__ == "__main__":
-    # Tự động lấy cổng kết nối từ môi trường Render hệ thống cấp phát
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
